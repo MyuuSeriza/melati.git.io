@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Melati Tumbuh 🌼</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#05091c}
+  body{font-family:Arial,sans-serif;touch-action:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  canvas{display:block;width:100vw;height:100vh}
+  #controls{
+    position:fixed;left:50%;bottom:14px;transform:translateX(-50%);
+    display:flex;gap:10px;z-index:5
+  }
+  button{
+    border:1px solid rgba(255,255,255,.25);border-radius:14px;
+    padding:10px 16px;background:rgba(10,25,35,.72);color:#fff;
+    font-size:14px;backdrop-filter:blur(5px)
+  }
+  button:active{transform:scale(.96)}
+  #hint{
+    position:fixed;top:12px;left:50%;transform:translateX(-50%);
+    color:#b8d0c8;font-size:12px;opacity:.85;text-align:center;
+    pointer-events:none
+  }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="hint">🌼 Melati Tumbuh • sentuh tombol untuk kontrol</div>
+<div id="controls">
+  <button id="restart">↻ Ulangi</button>
+  <button id="pause">Ⅱ Jeda</button>
+</div>
+<script>
+const canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
+let W=1000,H=720, ground=650, DPR=1, scale=1, ox=0,oy=0;
+const rand=(a,b)=>a+Math.random()*(b-a);
+const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const mix=(a,b,t)=>a.map((v,i)=>lerp(v,b[i],t));
+const easeOutCubic=t=>{t=clamp(t);return 1-(1-t)**3};
+const easeInOut=t=>{t=clamp(t);return t*t*(3-2*t)};
+const easeOutBack=t=>{t=clamp(t);const c1=1.5,c3=c1+1;return 1+c3*(t-1)**3+c1*(t-1)**2};
+const hex=c=>`rgb(${c.map(x=>Math.round(clamp(x,0,255))).join(',')})`;
+const skyTop=[5,9,28],skyMid=[10,32,46],skyBot=[8,30,22];
+function bg(y){
+ if(y>ground+12){let k=clamp((y-ground-12)/(H-ground-12));return [lerp(14,6,k),lerp(30,14,k),lerp(18,8,k)]}
+ let t=clamp(y/H); return t<.6?mix(skyTop,skyMid,t/.6):mix(skyMid,skyBot,(t-.6)/.4)
+}
+function cubic(p0,p1,p2,p3,t){let u=1-t;return [
+ u**3*p0[0]+3*u*u*t*p1[0]+3*u*t*t*p2[0]+t**3*p3[0],
+ u**3*p0[1]+3*u*u*t*p1[1]+3*u*t*t*p2[1]+t**3*p3[1]
+]}
+function tan(p0,p1,p2,p3,t){let u=1-t,x=3*u*u*(p1[0]-p0[0])+6*u*t*(p2[0]-p1[0])+3*t*t*(p3[0]-p2[0]),y=3*u*u*(p1[1]-p0[1])+6*u*t*(p2[1]-p1[1])+3*t*t*(p3[1]-p2[1]),n=Math.hypot(x,y)||1;return[x/n,y/n]}
+function quad(p0,p1,p2,t){let u=1-t;return[u*u*p0[0]+2*u*t*p1[0]+t*t*p2[0],u*u*p0[1]+2*u*t*p1[1]+t*t*p2[1]]}
+function qtan(p0,p1,p2,t){let x=2*(1-t)*(p1[0]-p0[0])+2*t*(p2[0]-p1[0]),y=2*(1-t)*(p1[1]-p0[1])+2*t*(p2[1]-p1[1]),n=Math.hypot(x,y)||1;return[x/n,y/n]}
+
+function resize(){
+ DPR=Math.min(devicePixelRatio||1,2);
+ canvas.width=innerWidth*DPR; canvas.height=innerHeight*DPR;
+ scale=Math.min(innerWidth/W,innerHeight/H);
+ ox=(innerWidth-W*scale)/2; oy=(innerHeight-H*scale)/2;
+ ctx.setTransform(DPR*scale,0,0,DPR*scale,DPR*ox,DPR*oy);
+}
+addEventListener('resize',resize); resize();
+
+function halo(x,y,r,color,strength,steps=7){
+ let base=bg(y);
+ for(let i=0;i<steps;i++){let k=i/(steps-1),rr=r*(1-.85*k);ctx.fillStyle=hex(mix(base,color,strength*(.04+.96*k**1.8)));ctx.beginPath();ctx.arc(x,y,rr,0,Math.PI*2);ctx.fill()}
+}
+function petal(cx,cy,ang,length,width,s0=0,s1=1,wscale=1,n=9){
+ let ca=Math.cos(ang),sa=Math.sin(ang),left=[],right=[];
+ for(let i=0;i<=n;i++){let s=lerp(s0,s1,i/n),w=width*wscale*(Math.sin(Math.PI*Math.min(1,s**.7)))**.9*(1-.2*s),x=s*length;left.push([x,-w]);right.push([x,w])}
+ return [...left,...right.reverse()].map(([x,y])=>[cx+x*ca-y*sa,cy+x*sa+y*ca])
+}
+function poly(points,fill,stroke=null){ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();ctx.fillStyle=hex(fill);ctx.fill();if(stroke){ctx.strokeStyle=hex(stroke);ctx.lineWidth=1;ctx.stroke()}}
+function line(points,color,width=1){ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));ctx.strokeStyle=hex(color);ctx.lineWidth=width;ctx.lineCap='round';ctx.lineJoin='round';ctx.stroke()}
+function oval(x,y,r,fill){ctx.fillStyle=hex(fill);ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill()}
+
+class Blade{
+ constructor(x,layer){this.x=x;this.layer=layer;this.h=rand(45,layer?120:130);this.bw=rand(layer?5:3,layer?9:6);this.base=layer?706:668;this.col=layer?[rand(30,55),rand(125,165),rand(45,72)]:[rand(18,38),rand(85,122),rand(36,56)];this.lean=rand(-28,28);this.phase=rand(0,6.28);this.delay=rand(0,2.8)}
+ draw(t){let g=easeOutCubic((t-this.delay)/2.4);if(g<=.01)return;let h=this.h*g,sway=Math.sin(t*1.3+this.x*.012+this.phase)*(5+h*.07)+Math.sin(t*.5+this.x*.004)*4,p0=[this.x,this.base],p1=[this.x+this.lean*.25*g+sway*.3,this.base-h*.55],p2=[this.x+this.lean*g+sway,this.base-h],left=[],right=[];
+ for(let i=0;i<=6;i++){let s=i/6,[px,py]=quad(p0,p1,p2,s),[tx,ty]=qtan(p0,p1,p2,s),w=this.bw*.5*(1-s)**.85;left.push([px-ty*w,py+tx*w]);right.push([px+ty*w,py-tx*w])} poly([...left,...right.reverse()],this.col,this.col)}
+}
+class Firefly{
+ constructor(){this.x=rand(0,W);this.y=rand(90,600);this.ang=rand(0,6.28);this.turn=rand(-1,1);this.speed=rand(12,34);this.phase=rand(0,6.28);this.rate=rand(.7,1.7);this.size=[14,14,20,20,28][Math.floor(rand(0,5))];this.appear=rand(2.5,9)}
+ update(dt,t){this.turn=clamp(this.turn+rand(-2.2,2.2)*dt,-1.6,1.6);this.ang+=this.turn*dt;this.x+=Math.cos(this.ang)*this.speed*dt;this.y+=Math.sin(this.ang)*this.speed*dt+Math.sin(t*1.7+this.phase)*9*dt;if(this.x<-30)this.x=W+30;if(this.x>W+30)this.x=-30;if(this.y<90){this.y=90;this.ang=-this.ang}if(this.y>600){this.y=600;this.ang=-this.ang}}
+ draw(t){let fade=clamp((t-this.appear)/2);if(fade<=0)return;let b=(.12+.88*(.5+.5*Math.sin(t*this.rate*2+this.phase))**1.6)*fade;halo(this.x,this.y,this.size,[255,222,70],.85*b,5);oval(this.x,this.y,this.size<28?2.2:3,mix(bg(this.y),[255,246,175],.35+.65*b))}
+}
+class Leaf{constructor(u,side,length,width){this.u=u;this.side=side;this.length=length;this.width=width;this.phase=rand(0,6.28)}}
+function drawLeaf(bx,by,ang,length,width,bend,t,phase){
+ ang+=Math.sin(t*1.1+phase)*.05;let ca=Math.cos(ang),sa=Math.sin(ang),tf=(x,y)=>[bx+x*ca-y*sa,by+x*sa+y*ca],top=[],bot=[],mid=[];
+ for(let i=0;i<=10;i++){let s=i/10,w=width*Math.sin(Math.PI*s**.7)*(1-.15*s),x=s*length,yb=bend*length*s*s;top.push(tf(x,-w+yb));bot.push(tf(x,w+yb));mid.push(tf(x,yb))}
+ poly([...top,...bot.reverse()],[30,100,48],[22,82,40]);poly([...top,...mid.reverse()],[48,138,62],[48,138,62]);line(mid,[150,210,125],1)
+}
+class Flower{
+ constructor(x,height,lean,delay,scale,phase,rot){this.x=x;this.height=height;this.lean=lean;this.delay=delay;this.scale=scale;this.phase=phase;this.rot=rot;this.leaves=[];[[.2,84,26],[.4,74,23],[.6,62,20],[.8,50,16]].forEach(([u,ln,wd])=>[-1,1].forEach(side=>{let k=rand(.9,1.1),uu=u+(u<.8?rand(-.02,.02):0);this.leaves.push(new Leaf(uu,side,ln*k,wd*k))}))}
+ ctrl(t){let sw=Math.sin(t*.8+this.phase)*5;return[[this.x,ground+6],[this.x-this.lean*.35,ground-this.height*.35],[this.x+this.lean*1.15+sw*.6,ground-this.height*.72],[this.x+this.lean+sw,ground-this.height]]}
+ state(t){let lt=t-this.delay,prog=easeInOut(lt/4.5),bud=easeOutCubic((lt-3.6)/1.8),bloom=(lt-5.4)/3.4,size=.45*bud+.55*easeOutBack(bloom);return[lt,prog,size,easeInOut(bloom)]}
+ drawHalo(t){let[lt,,size,spread]=this.state(t);if(lt<=.05||spread<=.02)return;let [hx,hy]=cubic(...this.ctrl(t),1);halo(hx,hy,105*this.scale,[255,255,240],.22*spread,6)}
+ draw(t){let[lt,prog,size,spread]=this.state(t);if(lt<=.05)return;let c=this.ctrl(t);
+ if(prog>.01){let n=Math.max(3,Math.floor(50*prog)),left=[],right=[],center=[];for(let i=0;i<=n;i++){let s=prog*i/n,[px,py]=cubic(...c,s),[tx,ty]=tan(...c,s),w=lerp(4.6,2.4,s)*this.scale;left.push([px-ty*w,py+tx*w]);right.push([px+ty*w,py-tx*w]);center.push([px-ty*w*.35,py+tx*w*.35])}poly([...left,...right.reverse()],[44,122,54],[34,102,44]);line(center,[92,172,92],1)}
+ for(const lf of this.leaves){let g=easeOutBack((prog-lf.u)/.2);if(g<=.02)continue;let [bx,by]=cubic(...c,lf.u),[tx,ty]=tan(...c,lf.u),base=Math.atan2(ty,tx),spr=lerp(1.15,.75,lf.u);drawLeaf(bx,by,base+lf.side*spr,lf.length*g*this.scale,lf.width*g*this.scale,.15*lf.side,t,lf.phase)}
+ if(size>.02){let[hx,hy]=cubic(...c,1),rot=this.rot+Math.sin(t*.7+this.phase)*.06;this.head(hx,hy,size,spread,rot)}
+ }
+ head(cx,cy,size,spread,rot){let L=50*this.scale*size,Wd=18*this.scale*size;
+ for(let k=0;k<5;k++){let a=-Math.PI/2+rot+lerp((k-2)*Math.PI/180*14,(k-2)*Math.PI/180*72+Math.PI/180*36,spread);poly(petal(cx,cy,a,L*.5,Wd*.16,0,1,1,5),[52,140,64],[40,118,52])}oval(cx,cy,Math.max(1,4*this.scale*size),[58,150,68]);
+ for(let k=0;k<5;k++){let a=-Math.PI/2+rot+lerp((k-2)*Math.PI/180*9,(k-2)*Math.PI/180*72+Math.PI/180*36,spread);poly(petal(cx,cy,a,L*.92,Wd*.95),[233,238,232],[200,210,198])}
+ for(let k=0;k<5;k++){let a=-Math.PI/2+rot+lerp((k-2)*Math.PI/180*9,(k-2)*Math.PI/180*72,spread);poly(petal(cx,cy,a,L,Wd),[248,249,246],[214,222,210]);poly(petal(cx,cy,a,L,Wd,.14,.9,.62),[255,255,255]);if(spread>.3)line([[cx+Math.cos(a)*L*.15,cy+Math.sin(a)*L*.15],[cx+Math.cos(a)*L*.72,cy+Math.sin(a)*L*.72]],[226,230,220],1)}
+ if(spread>.35){let rr=Math.max(1,3.6*this.scale*size*spread);oval(cx,cy,rr,[236,224,150]);for(let k=0;k<6;k++){let a=k*Math.PI/3+.4;oval(cx+Math.cos(a)*rr*1.6,cy+Math.sin(a)*rr*1.6,Math.max(.8,rr/3),[244,232,160])}}
+}
+}
+
+let scene, t=0,paused=false,last=performance.now();
+function makeScene(){
+ let back=Array.from({length:160},()=>new Blade(rand(-10,W+10),0));
+ let front=Array.from({length:75},()=>new Blade(rand(-10,W+10),1));
+ let flowers=[new Flower(305,300,-70,1.2,.95,.5,-.2),new Flower(700,340,65,2.2,1,2,.25),new Flower(500,430,8,.3,1.15,4,.05)];
+ let flies=Array.from({length:38},()=>new Firefly());
+ let stars=Array.from({length:65},()=>[rand(0,W),rand(0,380),rand(0,6.28),[1,1,1,2][Math.floor(rand(0,4))]]);
+ return{back,front,flowers,flies,stars}
+}
+function background(){
+ for(let y=0;y<H;y+=6){ctx.fillStyle=hex(bg(y+3));ctx.fillRect(0,y,W,7)}
+ let mx=830,my=105,base=bg(my);for(let i=0;i<10;i++){let k=i/9,r=140*(1-.8*k);ctx.fillStyle=hex(mix(base,[190,215,255],.30*(.05+.95*k**1.8)));ctx.beginPath();ctx.arc(mx,my,r,0,Math.PI*2);ctx.fill()}
+ oval(mx,my,26,[236,242,255]);oval(mx-9,my-7,5,[214,222,240]);oval(mx+13,my+13,7,[218,226,244])
+}
+function frame(now){
+ let dt=Math.min((now-last)/1000,.05);last=now;if(!paused){t+=dt;scene.flies.forEach(f=>f.update(dt,t))}
+ ctx.setTransform(DPR*scale,0,0,DPR*scale,DPR*ox,DPR*oy);background();
+ scene.stars.forEach(([x,y,ph,r])=>{let v=90+150*(.45+.55*Math.sin(t*1.4+ph));oval(x,y,r*.8,[v,v,v+15])});
+ scene.flies.forEach(f=>f.draw(t));scene.flowers.forEach(f=>f.drawHalo(t));scene.back.forEach(b=>b.draw(t));scene.flowers.forEach(f=>f.draw(t));scene.front.forEach(b=>b.draw(t));
+ requestAnimationFrame(frame)
+}
+function restart(){scene=makeScene();t=0;paused=false;document.getElementById('pause').textContent='Ⅱ Jeda'}
+document.getElementById('restart').onclick=restart;
+document.getElementById('pause').onclick=()=>{paused=!paused;document.getElementById('pause').textContent=paused?'▶ Lanjut':'Ⅱ Jeda'};
+addEventListener('keydown',e=>{if(e.key==='r'||e.key==='R')restart();if(e.key===' ') {e.preventDefault();document.getElementById('pause').click()}});
+restart();requestAnimationFrame(frame);
+</script>
+</body>
+</html>
